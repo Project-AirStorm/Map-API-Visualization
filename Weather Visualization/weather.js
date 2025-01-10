@@ -1,41 +1,54 @@
-// Initialize the map with high resolution settings
-let map = L.map('map', {
-    preferCanvas: true,
-    renderer: L.canvas({
-        padding: 0.5,
-        tolerance: 0
-    }),
-    zoomSnap: 0.1,
-    zoomDelta: 0.1,
-    wheelPxPerZoomLevel: 120
-}).setView([37.0902, -95.7129], 4);
+/**
+ * weather.js
+ * This file contains the core functionality for the weather map visualization application.
+ * It handles map initialization, data fetching, and rendering of weather data using canvas.
+ */
 
-// Use a high-resolution tile layer
+// Initialize the Leaflet map with optimized settings for smooth performance
+let map = L.map('map', {
+    preferCanvas: true,  // Use canvas rendering for better performance
+    renderer: L.canvas({
+        padding: 0.5,    // Small padding to prevent edge artifacts
+        tolerance: 0     // Zero tolerance for precise rendering
+    }),
+    zoomSnap: 0.1,      // Allow fine-grained zoom levels
+    zoomDelta: 0.1,     // Smooth zoom transitions
+    wheelPxPerZoomLevel: 120  // Adjust mouse wheel sensitivity
+}).setView([37.0902, -95.7129], 4);  // Center on continental US
+
+// Add the OpenStreetMap tile layer with high-resolution settings
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     tileSize: 256,
     zoomOffset: 0,
     maxNativeZoom: 19,
     tms: false,
-    detectRetina: true
+    detectRetina: true  // Support for high DPI displays
 }).addTo(map);
 
-// Optimize grid generation for batch processing
+/**
+ * Generates an optimized grid of coordinate points covering the continental United States
+ * The grid includes additional points for important geographical features like the Great Lakes
+ * @returns {Array} Array of [latitude, longitude] coordinate pairs
+ */
 const generateOptimizedGrid = () => {
-    const latStart = 24.0;
-    const latEnd = 50.0;
-    const lonStart = -126.0;
-    const lonEnd = -66.0;
-    const step = 0.25; // Adjusted step size for 0.25-degree intervals
+    // Define the geographical boundaries of the continental US
+    const latStart = 24.0;  // Southern boundary
+    const latEnd = 50.0;    // Northern boundary
+    const lonStart = -126.0; // Western boundary
+    const lonEnd = -66.0;   // Eastern boundary
+    const step = 0.25;      // Grid resolution in degrees
 
     const grid = [];
-    const seen = new Set();
+    const seen = new Set();  // Track unique coordinates
 
+    // Generate primary grid points
     for (let lat = latStart; lat <= latEnd; lat += step) {
         const row = [];
         for (let lon = lonStart; lon <= lonEnd; lon += step) {
             const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
             if (!seen.has(key)) {
+                // Round coordinates to 4 decimal places for consistency
                 row.push([
                     Math.round(lat * 10000) / 10000,
                     Math.round(lon * 10000) / 10000
@@ -48,16 +61,17 @@ const generateOptimizedGrid = () => {
         grid.push(...row);
     }
 
-    // Add important points
+    // Add important geographical points for better coverage
     const extraPoints = [
-        // Great Lakes
+        // Great Lakes region
         [45.5, -87.0], [46.5, -84.5], [43.5, -82.5], [42.5, -81.5], [44.0, -76.5],
-        // Border regions
+        // US-Canada border regions
         [49.0, -123.0], [48.5, -120.0], [47.5, -95.0], [45.0, -83.0], [44.5, -75.0],
-        // Coastal areas
+        // Coastal areas for better ocean-land transition
         [48.5, -124.5], [40.5, -124.0], [25.0, -81.0], [44.0, -67.0]
     ];
 
+    // Add extra points if they don't already exist in the grid
     extraPoints.forEach(point => {
         const key = `${point[0].toFixed(4)},${point[1].toFixed(4)}`;
         if (!seen.has(key)) {
@@ -69,19 +83,27 @@ const generateOptimizedGrid = () => {
     return grid;
 };
 
-
-// Optimized Weather Data Manager
+/**
+ * WeatherDataManager class handles fetching and managing weather data
+ * Includes batch processing and error handling capabilities
+ */
 class WeatherDataManager {
     constructor() {
         this.weatherData = [];
-        this.apiKey = 'zTdChqFCDsm2vSJU';
+        this.apiKey = 'zTdChqFCDsm2vSJU';  // API key for Open-Meteo service
     }
 
+    /**
+     * Fetches weather data for given coordinates in optimized batches
+     * @param {Array} coordinates Array of coordinate pairs
+     * @param {Function} updateProgress Callback for updating progress UI
+     * @returns {Promise<Array>} Processed weather data
+     */
     async fetchData(coordinates, updateProgress) {
-        const maxPointsPerRequest = 100; // Maximum points per API call
+        const maxPointsPerRequest = 100;  // API request batch size limit
         const chunks = [];
         
-        // Create optimized chunks for batch processing
+        // Split coordinates into manageable chunks
         for (let i = 0; i < coordinates.length; i += maxPointsPerRequest) {
             chunks.push(coordinates.slice(i, i + maxPointsPerRequest));
         }
@@ -89,18 +111,21 @@ class WeatherDataManager {
         let processedChunks = 0;
         const totalChunks = chunks.length;
 
+        // Process each chunk of coordinates
         for (const chunk of chunks) {
             try {
-                // Create comma-separated coordinate lists
+                // Create comma-separated coordinate lists for API request
                 const lats = chunk.map(coord => coord[0].toFixed(4)).join(',');
                 const lons = chunk.map(coord => coord[1].toFixed(4)).join(',');
                 
+                // Construct API URL with parameters
                 const url = `https://customer-api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m&temperature_unit=fahrenheit&forecast_days=1&models=gfs_graphcast025&apikey=${this.apiKey}`;
                 
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
 
+                // Process response data
                 if (Array.isArray(data)) {
                     data.forEach((point, index) => {
                         if (point.hourly && point.hourly.temperature_2m) {
@@ -112,15 +137,15 @@ class WeatherDataManager {
                     });
                 }
 
+                // Update progress indicator
                 processedChunks++;
                 updateProgress(processedChunks / totalChunks * 100);
                 
-                // Small delay between chunks to prevent rate limiting
+                // Rate limiting protection
                 await new Promise(resolve => setTimeout(resolve, 100));
             } catch (error) {
                 console.error('Error fetching chunk:', error);
-                // Retry failed chunk
-                chunks.push(chunk);
+                chunks.push(chunk);  // Retry failed chunks
             }
         }
 
@@ -128,23 +153,31 @@ class WeatherDataManager {
     }
 }
 
-// High-performance renderer
+/**
+ * WeatherRenderer class handles the visual representation of weather data
+ * Uses HTML5 Canvas for efficient rendering
+ */
 class WeatherRenderer {
     constructor(map) {
         this.map = map;
         this.canvas = document.createElement('canvas');
         this.ctx = this.canvas.getContext('2d');
+        
+        // Set up canvas overlay
         this.canvas.style.position = 'absolute';
         this.canvas.style.pointerEvents = 'none';
         this.canvas.style.opacity = 0.8;
         map.getPanes().overlayPane.appendChild(this.canvas);
 
-        // Attach event handlers
+        // Bind map events
         map.on('moveend', () => this.draw());
         map.on('zoomend', () => this.draw());
         this.updateCanvasSize();
     }
 
+    /**
+     * Updates canvas size to match map container
+     */
     updateCanvasSize() {
         const size = this.map.getSize();
         this.canvas.width = size.x;
@@ -156,34 +189,42 @@ class WeatherRenderer {
         L.DomUtil.setPosition(this.canvas, topLeft);
     }
 
+    /**
+     * Generates color for temperature value using interpolation
+     * @param {number} temp Temperature value
+     * @returns {string} RGBA color string
+     */
     getTemperatureColor(temp) {
+        // Temperature color mapping table
         const colorTable = new Map([
-            [-20, [138, 43, 226, 0.8]], // Dark Violet
+            [-20, [138, 43, 226, 0.8]],  // Dark Violet for extreme cold
             [-10, [75, 0, 130, 0.8]],    // Indigo/purple
-            [0, [0, 0, 255, 0.8]],     // Blue
+            [0, [0, 0, 255, 0.8]],       // Blue
             [10, [0, 100, 255, 0.8]],    // Light Blue
-            [20, [0, 150, 255, 0.8]],   // Sky Blue
-            [30, [0, 200, 255, 0.8]],   // Light Cyan
-            [40, [0, 255, 200, 0.8]],   // Cyan
-            [50, [0, 255, 0, 0.8]],     // Green
+            [20, [0, 150, 255, 0.8]],    // Sky Blue
+            [30, [0, 200, 255, 0.8]],    // Light Cyan
+            [40, [0, 255, 200, 0.8]],    // Cyan
+            [50, [0, 255, 0, 0.8]],      // Green
             [60, [173, 255, 47, 0.8]],   // Green Yellow
-            [70, [255, 255, 0, 0.8]],   // Yellow
-            [80, [255, 200, 0, 0.8]],   // Orange Yellow
-            [90, [255, 150, 0, 0.8]],   // Orange
-            [100, [255, 69, 0, 0.8]],  // Orange Red
-            [110, [255, 0, 0, 0.8]],    // Red
-            [120, [139, 0, 0, 0.8]]     // Dark Red/Maroon
+            [70, [255, 255, 0, 0.8]],    // Yellow
+            [80, [255, 200, 0, 0.8]],    // Orange Yellow
+            [90, [255, 150, 0, 0.8]],    // Orange
+            [100, [255, 69, 0, 0.8]],    // Orange Red
+            [110, [255, 0, 0, 0.8]],     // Red
+            [120, [139, 0, 0, 0.8]]      // Dark Red/Maroon for extreme heat
         ]);
 
         const colorStops = Array.from(colorTable.entries());
 
+        // Handle temperature extremes
         if (temp <= colorStops[0][0]) {
-          return `rgba(${colorStops[0][1].join(',')})`; // Return the first color if temp is below the minimum
+            return `rgba(${colorStops[0][1].join(',')})`;
         }
         if (temp >= colorStops[colorStops.length - 1][0]) {
-          return `rgba(${colorStops[colorStops.length - 1][1].join(',')})`; // Return the last color if temp is above the maximum
+            return `rgba(${colorStops[colorStops.length - 1][1].join(',')})`;
         }
 
+        // Interpolate between color stops
         for (let i = 0; i < colorStops.length - 1; i++) {
             if (temp <= colorStops[i + 1][0]) {
                 const [temp1, color1] = colorStops[i];
@@ -196,74 +237,54 @@ class WeatherRenderer {
                 return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${color[3]})`;
             }
         }
-        return 'transparent' //Should never reach here
+        
+        return 'transparent';
     }
 
-
-
+    /**
+     * Renders the weather data on the canvas
+     */
     draw() {
         this.updateCanvasSize();
         const bounds = this.map.getBounds();
         const zoom = this.map.getZoom();
 
+        // Clear previous render
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        this.weatherData.forEach(point => {
-            const temp = point.temperatures[this.currentHour];
-            const color = this.getTemperatureColor(temp);
-
-            // Calculate pixel position
-            const pixelPoint = this.map.latLngToContainerPoint([
-                point.coords[0],
-                point.coords[1]
-            ]);
-
-            // Draw point with fixed size
-            this.ctx.fillStyle = color;
-            this.ctx.beginPath();
-            this.ctx.arc(pixelPoint.x, pixelPoint.y, 20, 0, Math.PI * 2); // Fixed radius
-            this.ctx.fill();
-        });
-    }
-
-
-
-
-    draw() {
-        this.updateCanvasSize();
-        const bounds = this.map.getBounds();
-        const zoom = this.map.getZoom();
-
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
+        // Calculate rectangle size based on map zoom
         const topLeft = this.map.latLngToContainerPoint([bounds.getNorth(), bounds.getWest()]);
         const bottomRight = this.map.latLngToContainerPoint([bounds.getNorth() - 0.5, bounds.getWest() + 0.5]);
         const rectWidth = Math.abs(bottomRight.x - topLeft.x);
         const rectHeight = Math.abs(bottomRight.y - topLeft.y);
 
+        // Draw each data point
         this.weatherData.forEach(point => {
             const temp = point.temperatures[this.currentHour];
             const color = this.getTemperatureColor(temp);
 
-            // Calculate pixel position for the point
+            // Convert geographic coordinates to pixel coordinates
             const pixelPoint = this.map.latLngToContainerPoint([
                 point.coords[0],
                 point.coords[1]
             ]);
 
-            // Draw rectangle with calculated size
+            // Draw temperature rectangle
             this.ctx.fillStyle = color;
             this.ctx.fillRect(
-                pixelPoint.x - rectWidth / 2,  // Center the rectangle
-                pixelPoint.y - rectHeight / 2, // Center the rectangle
-                rectWidth,                     // Width of rectangle
-                rectHeight                     // Height of rectangle
+                pixelPoint.x - rectWidth / 2,
+                pixelPoint.y - rectHeight / 2,
+                rectWidth,
+                rectHeight
             );
         });
+    }
 
-
-}
-
+    /**
+     * Updates render with new weather data
+     * @param {Array} weatherData Array of weather data points
+     * @param {number} hour Current hour to display
+     */
     render(weatherData, hour) {
         this.weatherData = weatherData;
         this.currentHour = hour;
@@ -271,9 +292,12 @@ class WeatherRenderer {
     }
 }
 
-
-// Create UI elements
+/**
+ * Creates and sets up UI control elements
+ * @returns {Object} References to UI elements
+ */
 const createUIElements = () => {
+    // Create time slider control
     const timeSliderContainer = document.createElement('div');
     timeSliderContainer.className = 'control-container time-slider';
     timeSliderContainer.innerHTML = `
@@ -281,6 +305,7 @@ const createUIElements = () => {
         <span id="timeDisplay">00:00</span>`;
     document.body.appendChild(timeSliderContainer);
 
+    // Create progress bar
     const progressContainer = document.createElement('div');
     progressContainer.className = 'control-container progress-bar';
     progressContainer.innerHTML = `
@@ -290,47 +315,58 @@ const createUIElements = () => {
         </div>`;
     document.body.appendChild(progressContainer);
 
+    // Create temperature tooltip
     const tooltip = document.createElement('div');
     tooltip.className = 'temperature-tooltip';
     document.body.appendChild(tooltip);
 
-    return { progressBar: document.getElementById('progressBar'), progressText: document.getElementById('progressText'), tooltip };
+    return {
+        progressBar: document.getElementById('progressBar'),
+        progressText: document.getElementById('progressText'),
+        tooltip
+    };
 };
 
-// Main application initialization
+/**
+ * Main application initialization function
+ * Sets up the weather map and all its components
+ */
 async function initWeatherMap() {
     const { progressBar, progressText, tooltip } = createUIElements();
     const dataManager = new WeatherDataManager();
     const renderer = new WeatherRenderer(map);
 
-    // Add mousemove event listener to map
+    // Set up mousemove event for temperature tooltip
     map.on('mousemove', (e) => {
         const { lat, lng } = e.latlng;
         if (!dataManager.weatherData.length) return;
 
+        // Find nearest data point
         const point = dataManager.weatherData.find(p => {
             const latDiff = Math.abs(p.coords[0] - lat);
             const lngDiff = Math.abs(p.coords[1] - lng);
             return latDiff < 0.25 && lngDiff < 0.25;
         });
 
+        // Update tooltip
         if (point) {
             const hour = parseInt(document.getElementById('timeSlider').value);
             const temperature = point.temperatures[hour];
-            tooltip.style.display = 'block';
+            tooltip.style.display = 'none';
             tooltip.style.left = e.originalEvent.pageX + 10 + 'px';
             tooltip.style.top = e.originalEvent.pageY + 10 + 'px';
             tooltip.innerHTML = `${temperature.toFixed(1)}&#176;F`;
         } else {
-            tooltip.style.display = 'none';
+            tooltip.
         }
     });
 
+    // Hide tooltip when mouse leaves map
     map.on('mouseout', () => {
         tooltip.style.display = 'none';
     });
 
-    // Event listener for time slider
+    // Set up time slider event listener
     document.getElementById('timeSlider').addEventListener('input', (e) => {
         const hour = parseInt(e.target.value);
         renderer.render(dataManager.weatherData, hour);
@@ -338,10 +374,12 @@ async function initWeatherMap() {
     });
 
     try {
+        // Generate coordinate grid
         console.log('Generating optimized grid...');
         const grid = generateOptimizedGrid();
         console.log('Grid generated. Points:', grid.length);
         
+        // Fetch weather data with progress updates
         console.log('Fetching weather data...');
         const weatherData = await dataManager.fetchData(grid, (progress) => {
             progressBar.style.width = `${progress}%`;
@@ -349,9 +387,11 @@ async function initWeatherMap() {
         });
         console.log('Weather data fetched. Points:', weatherData.length);
 
+        // Initial render
         renderer.render(weatherData, 0);
         progressText.textContent = 'Loading complete!';
         
+        // Fade out and remove progress bar
         setTimeout(() => {
             const container = progressBar.parentElement.parentElement;
             container.style.opacity = '0';
@@ -364,5 +404,5 @@ async function initWeatherMap() {
     }
 }
 
-// Initialize the application
-initWeatherMap();
+// Initialize the application when the page loads
+initWeatherMap();style.display = 'block';
