@@ -89,6 +89,7 @@ Manages the visual representation:
 2. Maximum of 24-hour forecast
 3. Data updates based on API refresh rate
 4. Weather data resolution limited to 0.25-degree grid
+5. Zoom feature needs to be fixed
 
 ## Customization
 
