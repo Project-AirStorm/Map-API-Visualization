@@ -1,6 +1,6 @@
 # Interactive Weather Map
 
-A high-performance, interactive weather visualization application that displays temperature data across the continental United States using a dynamic heatmap overlay.
+An interactive weather visualization test that displays temperature data across the continental United States using a dynamic heatmap overlay.
 
 ## Features
 
