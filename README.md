@@ -9,6 +9,7 @@ An interactive weather visualization test that displays temperature data across 
 - Tooltip displaying exact temperature on hover
 - Optimized data fetching with progress indication
 
+### Screenshot
   
 <img width="1370" alt="Screenshot 2025-01-14 at 1 58 46 AM" src="https://github.com/user-attachments/assets/9fd66a38-e178-4171-822b-70d54efa03df" />
 
